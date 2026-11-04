@@ -247,21 +247,21 @@ contract InternalSwapPool is BaseHook {
     /**
      * Once a swap has been made, we distribute fees to our LPs and emit our price update event.
      *
-     * @param sender The initial msg.sender for the swap call
+     * address sender The initial msg.sender for the swap call
      * @param key The key for the pool
      * @param params The parameters for the swap
      * @param delta The amount owed to the caller (positive) or owed to the pool (negative)
-     * @param hookData Arbitrary data handed into the PoolManager by the swapper to be be passed on to the hook
+     * calldata hookData Arbitrary data handed into the PoolManager by the swapper to be be passed on to the hook
      *
      * @return selector_ The function selector for the hook
      * @return hookDeltaUnspecified_ The hook's delta in unspecified currency. Positive: the hook is owed/took currency, negative: the hook owes/sent currency
      */
     function _afterSwap(
-        address sender,
+        address,
         PoolKey calldata key,
         SwapParams calldata params,
         BalanceDelta delta,
-        bytes calldata hookData
+        bytes calldata
     )
         internal
         override
