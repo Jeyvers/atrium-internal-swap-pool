@@ -214,6 +214,7 @@ contract InternalSwapPool is BaseHook {
 
                     // Apply the same percentage reduction to tokenIn
                     tokenIn = (tokenIn * percentage) / 1e18;
+                    ethOut = uint(-params.amountSpecified);
                 }
 
                 // Update our hook delta to reduce the upcoming swap amount to show that we have
@@ -256,51 +257,33 @@ contract InternalSwapPool is BaseHook {
      * @return selector_ The function selector for the hook
      * @return hookDeltaUnspecified_ The hook's delta in unspecified currency. Positive: the hook is owed/took currency, negative: the hook owes/sent currency
      */
-    function _afterSwap(
-        address,
-        PoolKey calldata key,
-        SwapParams calldata params,
-        BalanceDelta delta,
-        bytes calldata
-    )
-        internal
-        override
-        returns (bytes4 selector_, int128 hookDeltaUnspecified_)
-    {
-        // Determine the currency that we will be taking our fee
-        Currency swapFeeCurrency = params.amountSpecified < 0 ==
-            params.zeroForOne
-            ? key.currency1
-            : key.currency0;
+  function _afterSwap(address, PoolKey calldata key, SwapParams calldata params, BalanceDelta delta, bytes calldata)
+    internal override returns (bytes4 selector_, int128 hookDeltaUnspecified_)
+{
+    // 1. Which token is the user receiving? (the unspecified one)
+    Currency swapFeeCurrency = params.amountSpecified < 0 == params.zeroForOne ? key.currency1 : key.currency0;
 
-        // Capture the amount received from the swap
-        int128 swapAmount = params.amountSpecified < 0 == params.zeroForOne
-            ? delta.amount1()
-            : delta.amount0();
+    // 2. How much of it did the swap produce?
+    int128 swapAmount = params.amountSpecified < 0 == params.zeroForOne ? delta.amount1() : delta.amount0();
 
-        // Calculate the swap fee and ensure it is a positive uint
-        uint swapFee = (uint(
-            uint128(swapAmount < 0 ? -swapAmount : swapAmount)
-        ) * 1) / 100;
+    // 3. Our fee: 1% of it (positive number)
+    uint swapFee = uint(uint128(swapAmount < 0 ? -swapAmount : swapAmount)) / 100;
 
-        // Calculate a percentage of the swap amount to capture as the fee. For this hook example we
-        // will take 1% of the value that would be received.
-        bool feeIsCurrency0 = swapFeeCurrency == key.currency0;
-        _depositFees(
-            key,
-            feeIsCurrency0 ? swapFee : 0,
-            feeIsCurrency0 ? 0 : swapFee
-        );
-        // Take our swap fees from the {PoolManager}
-        swapFeeCurrency.take(poolManager, address(this), swapFee, false);
+    // 4. Record it under the token we actually took
+    bool feeIsCurrency0 = swapFeeCurrency == key.currency0;
+    _depositFees(key, feeIsCurrency0 ? swapFee : 0, feeIsCurrency0 ? 0 : swapFee);
 
-        // Set our hookDelta to remove the amount of fees from the amount that the user will receive
-        hookDeltaUnspecified_ = -int128(int(swapFee));
+    // 5. Actually take the tokens out of the PoolManager → hook now owes swapFee
+    swapFeeCurrency.take(poolManager, address(this), swapFee, false);
 
-        // Distribute fees to our LPs
-        _distributeFees(key);
-        selector_ = IHooks.afterSwap.selector;
-    }
+    // 6. Pass that debt to the user: they receive swapFee less
+    hookDeltaUnspecified_ = -int128(int(swapFee));
+
+    // 7. Donate ETH fees if there's enough
+    _distributeFees(key);
+
+    selector_ = IHooks.afterSwap.selector;
+}
 
     /**
      * Takes a collection address and, if there is sufficient fees available to
